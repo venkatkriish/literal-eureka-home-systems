@@ -1,8 +1,15 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
-use std::{convert::TryFrom, fmt};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{fmt, str::FromStr};
+use thiserror::Error;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Role {
+    User,
+    Admin,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct User {
     pub id: u32,
     pub name: String,
@@ -12,177 +19,122 @@ pub struct User {
     pub role: Role,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    User,
-    Admin,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Money(i64);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Money(pub i64);
 
 impl Money {
-    pub fn from_cents(cents: i64) -> Result<Self, String> {
+    pub fn new(cents: i64) -> Result<Self, DomainError> {
         if cents < 0 {
-            Err("money must be non-negative".into())
-        } else {
-            Ok(Self(cents))
+            return Err(DomainError::NegativeMoney);
         }
+        Ok(Self(cents))
     }
 
-    pub fn from_rupees_str(value: &str) -> Result<Self, String> {
-        let trimmed = value.trim();
-        if trimmed.starts_with('-') {
-            return Err("money must be non-negative".into());
-        }
-        let mut parts = trimmed.split('.');
-        let whole = parts.next().ok_or_else(|| "money must be numeric".to_string())?;
-        let frac = parts.next().unwrap_or("");
-        if parts.next().is_some() || whole.is_empty() || !whole.chars().all(|c| c.is_ascii_digit()) {
-            return Err("money must be a decimal amount with at most two fractional digits".into());
-        }
-        if !frac.chars().all(|c| c.is_ascii_digit()) || frac.len() > 2 {
-            return Err("money must be a decimal amount with at most two fractional digits".into());
-        }
-        let whole = whole.parse::<i64>().map_err(|_| "money is too large".to_string())?;
-        let cents = whole
-            .checked_mul(100)
-            .ok_or_else(|| "money is too large".to_string())?
-            .checked_add(match frac.len() {
-                0 => 0,
-                1 => frac.parse::<i64>().map_err(|_| "money is too large".to_string())? * 10,
-                _ => frac.parse::<i64>().map_err(|_| "money is too large".to_string())?,
-            })
-            .ok_or_else(|| "money is too large".to_string())?;
-        Self::from_cents(cents)
+    pub fn zero() -> Self {
+        Self(0)
     }
 
-    pub fn as_cents(&self) -> i64 {
+    pub fn cents(self) -> i64 {
         self.0
-    }
-
-    pub fn as_rupees(&self) -> String {
-        debug_assert!(self.0 >= 0, "money invariant violated");
-        format!("{}.{:02}", self.0 / 100, self.0 % 100)
-    }
-}
-
-impl TryFrom<i64> for Money {
-    type Error = String;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        Self::from_cents(value)
     }
 }
 
 impl Serialize for Money {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
-        serializer.serialize_str(&self.as_rupees())
+        serializer.serialize_str(&format!("{:.2}", self.0 as f64 / 100.0))
     }
 }
 
 impl<'de> Deserialize<'de> for Money {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        let value = String::deserialize(deserializer)?;
-        Money::from_rupees_str(&value).map_err(serde::de::Error::custom)
+        let raw = String::deserialize(deserializer)?;
+        parse_money(&raw).map_err(serde::de::Error::custom)
     }
 }
 
 impl fmt::Display for Money {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.as_rupees())
+        write!(f, "{:.2}", self.0 as f64 / 100.0)
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct BillingMonth {
-    pub year: i32,
-    pub month: u32,
+pub fn parse_money(input: &str) -> Result<Money, DomainError> {
+    let trimmed = input.trim().trim_start_matches('₹');
+    let value: f64 = trimmed.parse().map_err(|_| DomainError::InvalidMoney)?;
+    if value < 0.0 {
+        return Err(DomainError::NegativeMoney);
+    }
+    Ok(Money((value * 100.0).round() as i64))
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BillingMonth(pub String);
 
 impl BillingMonth {
-    pub fn parse(value: impl AsRef<str>) -> Result<Self, String> {
-        let value = value.as_ref();
-        let mut parts = value.split('-');
-        let year = parts.next().ok_or_else(|| "billing month must be in YYYY-MM format".to_string())?;
-        let month = parts.next().ok_or_else(|| "billing month must be in YYYY-MM format".to_string())?;
-        if parts.next().is_some() || year.len() != 4 || month.len() != 2 {
-            return Err("billing month must be in YYYY-MM format".into());
+    pub fn parse(input: &str) -> Result<Self, DomainError> {
+        let parts: Vec<_> = input.split('-').collect();
+        if parts.len() != 2 {
+            return Err(DomainError::InvalidMonth);
         }
-        if !year.chars().all(|c| c.is_ascii_digit()) || !month.chars().all(|c| c.is_ascii_digit()) {
-            return Err("billing month must contain digits only".into());
+        let year = parts[0].parse::<u32>().map_err(|_| DomainError::InvalidMonth)?;
+        let month = parts[1].parse::<u32>().map_err(|_| DomainError::InvalidMonth)?;
+        if !(2000..=2099).contains(&year) || !(1..=12).contains(&month) {
+            return Err(DomainError::InvalidMonth);
         }
-        let year = year.parse::<i32>().map_err(|_| "billing month year is invalid".to_string())?;
-        let month = month.parse::<u32>().map_err(|_| "billing month month is invalid".to_string())?;
-        if !(2000..=2099).contains(&year) {
-            return Err("billing month year must be between 2000 and 2099".into());
-        }
-        if !(1..=12).contains(&month) {
-            return Err("billing month must be between 01 and 12".into());
-        }
-        Ok(Self { year, month })
+        Ok(Self(format!("{year:04}-{month:02}")))
     }
 }
 
-impl fmt::Display for BillingMonth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:04}-{:02}", self.year, self.month)
+impl FromStr for BillingMonth {
+    type Err = DomainError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
     }
 }
 
 impl Serialize for BillingMonth {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        serializer.serialize_str(&self.0)
     }
 }
 
-impl<'de> Deserialize<'de> for BillingMonth {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        BillingMonth::parse(&value).map_err(serde::de::Error::custom)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BillingDate(pub NaiveDate);
 
-impl BillingDate {
-    pub fn parse(value: impl AsRef<str>) -> Result<Self, String> {
-        NaiveDate::parse_from_str(value.as_ref(), "%Y-%m-%d")
-            .map(Self)
-            .map_err(|err| format!("invalid billing date: {err}"))
-    }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BillStatus {
+    Pending,
+    Paid,
+    Overdue,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct ConsumptionRecord {
-    pub month: BillingMonth,
-    pub units: u32,
-    pub rate_per_unit: Money,
-    pub fixed_charge: Money,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PaymentStatus {
     Completed,
     Failed,
     Refunded,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConsumptionRecord {
+    pub month: BillingMonth,
+    pub units: f64,
+    pub rate_per_unit: Money,
+    pub fixed_charge: Money,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Payment {
     pub id: u32,
     pub month: BillingMonth,
@@ -191,12 +143,12 @@ pub struct Payment {
     pub status: PaymentStatus,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Bill {
     pub id: u32,
     pub user_id: u32,
     pub month: BillingMonth,
-    pub units: u32,
+    pub units: f64,
     pub rate_per_unit: Money,
     pub fixed_charge: Money,
     pub amount_due: Money,
@@ -206,19 +158,11 @@ pub struct Bill {
     pub payments: Vec<Payment>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum BillStatus {
-    Pending,
-    Paid,
-    Overdue,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewBillInput {
     pub user_id: u32,
     pub month: String,
-    pub units: u32,
+    pub units: f64,
     pub rate_per_unit: String,
     pub fixed_charge: String,
     pub due_date: String,
@@ -227,6 +171,7 @@ pub struct NewBillInput {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewPaymentInput {
     pub amount: String,
+    pub status: Option<PaymentStatus>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -244,7 +189,8 @@ pub struct StatsSummary {
     pub total_bills: usize,
     pub paid_bills: usize,
     pub pending_bills: usize,
-    pub total_units: u32,
+    pub overdue_bills: usize,
+    pub total_units: f64,
     pub total_revenue: Money,
     pub average_bill: Money,
 }
@@ -256,7 +202,21 @@ pub struct DashboardView {
     pub bills: Vec<Bill>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Error)]
+pub enum DomainError {
+    #[error("money must be non-negative")]
+    NegativeMoney,
+    #[error("invalid money value")]
+    InvalidMoney,
+    #[error("invalid billing month")]
+    InvalidMonth,
+    #[error("not found")]
+    NotFound,
+    #[error("validation failed: {0}")]
+    Validation(String),
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct ApiError {
     pub message: String,
 }
