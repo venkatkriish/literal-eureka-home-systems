@@ -99,15 +99,6 @@ impl FromStr for BillingMonth {
     }
 }
 
-impl Serialize for BillingMonth {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.0)
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BillingDate(pub NaiveDate);
 
