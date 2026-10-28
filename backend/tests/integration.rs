@@ -24,15 +24,17 @@ async fn seeded_dashboard_and_health_work() {
     let users = json.get("users").and_then(Value::as_array).expect("users should be an array");
     let bills = json.get("bills").and_then(Value::as_array).expect("bills should be an array");
 
-    assert_eq!(summary.get("total_users").and_then(Value::as_u64), Some(3));
-    assert_eq!(summary.get("total_bills").and_then(Value::as_u64), Some(3));
-    assert_eq!(summary.get("paid_bills").and_then(Value::as_u64), Some(1));
+    // The seed (db.rs): 4 users (one admin) and 5 bills — 2 paid, 2 pending, 1 overdue.
+    assert_eq!(summary.get("total_users").and_then(Value::as_u64), Some(4));
+    assert_eq!(summary.get("total_bills").and_then(Value::as_u64), Some(5));
+    assert_eq!(summary.get("paid_bills").and_then(Value::as_u64), Some(2));
     assert_eq!(summary.get("pending_bills").and_then(Value::as_u64), Some(2));
-    assert_eq!(summary.get("total_units").and_then(Value::as_u64), Some(565));
-    assert_eq!(summary.get("total_revenue").and_then(Value::as_str), Some("3661.75"));
-    assert_eq!(summary.get("average_bill").and_then(Value::as_str), Some("1220.58"));
-    assert_eq!(users.len(), 3);
-    assert_eq!(bills.len(), 3);
+    assert_eq!(summary.get("overdue_bills").and_then(Value::as_u64), Some(1));
+    assert_eq!(summary.get("total_units").and_then(Value::as_f64), Some(955.0)); // units are fractional (f64)
+    assert_eq!(summary.get("total_revenue").and_then(Value::as_str), Some("7063.75"));
+    assert_eq!(summary.get("average_bill").and_then(Value::as_str), Some("1412.75"));
+    assert_eq!(users.len(), 4);
+    assert_eq!(bills.len(), 5);
 }
 
 async fn send(app: &Router, path: &str) -> axum::response::Response {
