@@ -16,9 +16,10 @@ impl Client {
             total_bills: bills.len(),
             paid_bills: bills.iter().filter(|bill| matches!(bill.status, BillStatus::Paid)).count(),
             pending_bills: bills.iter().filter(|bill| matches!(bill.status, BillStatus::Pending)).count(),
+            overdue_bills: bills.iter().filter(|bill| matches!(bill.status, BillStatus::Overdue)).count(),
             total_units: bills.iter().map(|bill| bill.units).sum(),
-            total_revenue: Money::from_cents(bills.iter().map(|bill| bill.amount_due.as_cents()).sum()).unwrap_or_else(|_| Money::from_cents(0).unwrap()),
-            average_bill: Money::from_cents(if bills.is_empty() { 0 } else { bills.iter().map(|bill| bill.amount_due.as_cents()).sum::<i64>() / bills.len() as i64 }).unwrap_or_else(|_| Money::from_cents(0).unwrap()),
+            total_revenue: Money::new(bills.iter().map(|bill| bill.amount_due.cents()).sum()).unwrap_or_else(|_| Money::new(0).unwrap()),
+            average_bill: Money::new(if bills.is_empty() { 0 } else { bills.iter().map(|bill| bill.amount_due.cents()).sum::<i64>() / bills.len() as i64 }).unwrap_or_else(|_| Money::new(0).unwrap()),
         };
         DashboardView { summary, users, bills }
     }
@@ -34,8 +35,8 @@ pub fn sample_users() -> Vec<User> {
 
 pub fn sample_bills() -> Vec<Bill> {
     vec![
-        Bill { id: 1, user_id: 1, month: BillingMonth::parse("2026-01").expect("valid billing month"), units: 210, rate_per_unit: Money::from_cents(650).expect("valid money"), fixed_charge: Money::from_cents(4500).expect("valid money"), amount_due: Money::from_cents(141000).expect("valid money"), due_date: BillingDate::parse("2026-01-28").expect("valid billing date"), status: BillStatus::Pending, consumption_history: vec![], payments: vec![] },
-        Bill { id: 2, user_id: 1, month: BillingMonth::parse("2025-12").expect("valid billing month"), units: 195, rate_per_unit: Money::from_cents(625).expect("valid money"), fixed_charge: Money::from_cents(4500).expect("valid money"), amount_due: Money::from_cents(126375).expect("valid money"), due_date: BillingDate::parse("2025-12-28").expect("valid billing date"), status: BillStatus::Paid, consumption_history: vec![], payments: vec![] },
-        Bill { id: 3, user_id: 2, month: BillingMonth::parse("2026-01").expect("valid billing month"), units: 160, rate_per_unit: Money::from_cents(590).expect("valid money"), fixed_charge: Money::from_cents(4000).expect("valid money"), amount_due: Money::from_cents(98800).expect("valid money"), due_date: BillingDate::parse("2026-01-25").expect("valid billing date"), status: BillStatus::Pending, consumption_history: vec![], payments: vec![] },
+        Bill { id: 1, user_id: 1, month: BillingMonth::parse("2026-01").expect("valid billing month"), units: 210.0, rate_per_unit: Money::new(650).expect("valid money"), fixed_charge: Money::new(4500).expect("valid money"), amount_due: Money::new(141000).expect("valid money"), due_date: BillingDate("2026-01-28".parse().expect("valid billing date")), status: BillStatus::Pending, consumption_history: vec![], payments: vec![] },
+        Bill { id: 2, user_id: 1, month: BillingMonth::parse("2025-12").expect("valid billing month"), units: 195.0, rate_per_unit: Money::new(625).expect("valid money"), fixed_charge: Money::new(4500).expect("valid money"), amount_due: Money::new(126375).expect("valid money"), due_date: BillingDate("2025-12-28".parse().expect("valid billing date")), status: BillStatus::Paid, consumption_history: vec![], payments: vec![] },
+        Bill { id: 3, user_id: 2, month: BillingMonth::parse("2026-01").expect("valid billing month"), units: 160.0, rate_per_unit: Money::new(590).expect("valid money"), fixed_charge: Money::new(4000).expect("valid money"), amount_due: Money::new(98800).expect("valid money"), due_date: BillingDate("2026-01-25".parse().expect("valid billing date")), status: BillStatus::Pending, consumption_history: vec![], payments: vec![] },
     ]
 }

@@ -1,2 +1,4 @@
-// Frontend application entrypoint for rendering the dashboard UI.
-// TODO: implement
+// Frontend application entrypoint: renders the dashboard markup from the sample data.
+fn main() {
+    println!("{}", frontend::app::render_app());
+}
