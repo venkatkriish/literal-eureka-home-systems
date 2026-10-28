@@ -9,6 +9,7 @@ RUN apt-get update \
 
 COPY Cargo.toml ./Cargo.toml
 COPY backend/Cargo.toml ./backend/Cargo.toml
+COPY frontend/Cargo.toml ./frontend/Cargo.toml
 COPY backend/src ./backend/src
 COPY backend/tests ./backend/tests
 COPY README.md ./README.md
