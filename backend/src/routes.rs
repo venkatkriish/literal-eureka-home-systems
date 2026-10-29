@@ -11,6 +11,7 @@ pub fn router(state: AppState) -> Router {
         .route("/bills", get(handlers::list_bills).post(handlers::create_bill))
         .route("/bills/search", get(handlers::search_bills))
         .route("/bills/:id/pay", post(handlers::record_payment))
+        .route("/bills/:id/pdf", get(handlers::download_bill_pdf))
         .route("/dashboard", get(handlers::dashboard))
         .route("/admin/dashboard", get(handlers::admin_dashboard))
         .route("/stats", get(handlers::stats))

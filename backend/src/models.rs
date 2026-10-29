@@ -76,6 +76,12 @@ pub fn parse_money(input: &str) -> Result<Money, DomainError> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BillingMonth(pub String);
 
+impl fmt::Display for BillingMonth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 impl BillingMonth {
     pub fn parse(input: &str) -> Result<Self, DomainError> {
         let parts: Vec<_> = input.split('-').collect();
@@ -102,12 +108,34 @@ impl FromStr for BillingMonth {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BillingDate(pub NaiveDate);
 
+impl BillingDate {
+    pub fn parse(s: &str) -> Result<Self, chrono::ParseError> {
+        NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").map(Self)
+    }
+}
+
+impl fmt::Display for BillingDate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.format("%Y-%m-%d"))
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BillStatus {
     Pending,
     Paid,
     Overdue,
+}
+
+impl fmt::Display for BillStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BillStatus::Pending => f.write_str("Pending"),
+            BillStatus::Paid => f.write_str("Paid"),
+            BillStatus::Overdue => f.write_str("Overdue"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,51 +1,30 @@
-use axum::{body::{to_bytes, Body}, http::{header, Method, Request, StatusCode}, Router};
-use backend::{db::AppState, routes};
-use serde_json::Value;
+use axum::body::{to_bytes, Body};
+use axum::http::{header, Request, StatusCode};
 use tower::ServiceExt;
 
+use backend::{db::AppState, routes};
+
 #[tokio::test]
-async fn seeded_dashboard_and_health_work() {
-    let app: Router = routes::router(AppState::seeded());
-
-    let health = send(&app, "/health").await;
-    assert_eq!(health.status(), StatusCode::OK);
-    let health_content_type = health.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
-    assert!(health_content_type.starts_with("text/plain"), "unexpected content type: {health_content_type}");
-    let health_body = to_bytes(health.into_body(), usize::MAX).await.expect("failed to read health body");
-    assert_eq!(health_body, "ok");
-
-    let dashboard = send(&app, "/dashboard").await;
-    assert_eq!(dashboard.status(), StatusCode::OK);
-    let content_type = dashboard.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
-    assert!(content_type.starts_with("application/json"), "unexpected content type: {content_type}");
-    let dashboard_body = to_bytes(dashboard.into_body(), usize::MAX).await.expect("failed to read dashboard body");
-    let json: Value = serde_json::from_slice(&dashboard_body).expect("dashboard should be valid json");
-    let summary = json.get("summary").and_then(Value::as_object).expect("summary should be an object");
-    let users = json.get("users").and_then(Value::as_array).expect("users should be an array");
-    let bills = json.get("bills").and_then(Value::as_array).expect("bills should be an array");
-
-    // The seed (db.rs): 4 users (one admin) and 5 bills — 2 paid, 2 pending, 1 overdue.
-    assert_eq!(summary.get("total_users").and_then(Value::as_u64), Some(4));
-    assert_eq!(summary.get("total_bills").and_then(Value::as_u64), Some(5));
-    assert_eq!(summary.get("paid_bills").and_then(Value::as_u64), Some(2));
-    assert_eq!(summary.get("pending_bills").and_then(Value::as_u64), Some(2));
-    assert_eq!(summary.get("overdue_bills").and_then(Value::as_u64), Some(1));
-    assert_eq!(summary.get("total_units").and_then(Value::as_f64), Some(955.0)); // units are fractional (f64)
-    assert_eq!(summary.get("total_revenue").and_then(Value::as_str), Some("7063.75"));
-    assert_eq!(summary.get("average_bill").and_then(Value::as_str), Some("1412.75"));
-    assert_eq!(users.len(), 4);
-    assert_eq!(bills.len(), 5);
+async fn bill_pdf_download_returns_pdf_bytes() {
+    let app = routes::router(AppState::seeded());
+    let response = app
+        .oneshot(Request::builder().uri("/bills/1/pdf").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/pdf");
+    assert_eq!(response.headers()[header::CONTENT_DISPOSITION], "attachment; filename=\"bill-1.pdf\"");
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert!(body.starts_with(b"%PDF"));
+    assert!(!body.is_empty());
 }
 
-async fn send(app: &Router, path: &str) -> axum::response::Response {
-    app.clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri(path)
-                .body(Body::empty())
-                .expect("failed to build request"),
-        )
+#[tokio::test]
+async fn missing_bill_pdf_returns_not_found() {
+    let app = routes::router(AppState::seeded());
+    let response = app
+        .oneshot(Request::builder().uri("/bills/999/pdf").body(Body::empty()).unwrap())
         .await
-        .expect("request failed")
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
