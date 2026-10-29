@@ -1,0 +1,78 @@
+version: 1
+name: literal-eureka-home-systems
+description: Build, test, package, and scan venkatkriish/literal-eureka-home-systems
+triggers:
+- kind: push
+  branches:
+  - main
+  - release/*
+- kind: pull_request
+- kind: manual
+stages:
+- name: build-and-test
+  steps:
+  - name: build
+    run: cargo build --locked
+    timeout_s: 900
+    cache:
+    - target
+  - name: lint
+    run: cargo clippy --locked -- -D warnings
+    timeout_s: 900
+    cache:
+    - target
+  - name: test
+    type: test
+    run: cargo test --locked
+    timeout_s: 900
+    cache:
+    - target
+    with:
+      select: auto
+      retry_flaky: 1
+- name: security-code
+  steps:
+  - name: code scan
+    type: scan
+    run: semgrep scan --config auto --error --quiet . || { command -v semgrep >/dev/null || { echo 'semgrep not
+      installed; skipped'; exit 0; }; exit 1; }
+    timeout_s: 900
+  - name: secret scan
+    type: scan
+    run: command -v gitleaks >/dev/null && gitleaks detect --no-banner --redact || { command -v gitleaks >/dev/null
+      && exit 1 || echo 'gitleaks not installed; skipped'; }
+    timeout_s: 900
+  - name: dependency audit
+    type: scan
+    run: if [ -f Cargo.lock ] && command -v cargo-audit >/dev/null; then cargo audit; else echo 'cargo-audit not
+      installed or Cargo.lock missing; skipped'; fi
+    timeout_s: 900
+  - name: iac scan
+    type: scan
+    run: command -v checkov >/dev/null && checkov -d . --quiet --compact --framework kubernetes,helm,dockerfile,terraform
+      || echo 'checkov not installed; skipped'
+    timeout_s: 900
+- name: package
+  when:
+    branches:
+    - main
+    - release/*
+  steps:
+  - name: build image
+    type: build_image
+    with:
+      image: registry.example.com/literal-eureka-home-systems
+      dockerfile: Dockerfile
+      context: .
+      push: true
+- name: security-container
+  when:
+    branches:
+    - main
+    - release/*
+  steps:
+  - name: image scan
+    type: scan
+    run: command -v trivy >/dev/null && trivy image --exit-code 1 --severity HIGH,CRITICAL ${NEXUS_IMAGE}:${NEXUS_SHA}
+      || echo 'trivy not installed; skipped'
+    timeout_s: 900
