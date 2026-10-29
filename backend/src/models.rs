@@ -19,6 +19,22 @@ pub struct User {
     pub role: Role,
 }
 
+impl User {
+    pub fn display_name(&self) -> String {
+        let name = self.name.trim();
+        if !name.is_empty() {
+            return name.to_string();
+        }
+
+        let email = self.email.trim();
+        if !email.is_empty() {
+            return email.to_string();
+        }
+
+        format!("User {}", self.id)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Money(pub i64);
 

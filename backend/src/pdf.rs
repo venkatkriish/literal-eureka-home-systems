@@ -1,20 +1,45 @@
 use crate::models::{Bill, User};
 
 pub fn render_bill_pdf(bill: &Bill, customer: &User, viewer: &User) -> Vec<u8> {
-    let lines = [
+    let lines = vec![
         "Electricity Bill".to_string(),
         format!("Bill ID: {}", bill.id),
         format!("Customer: {}", customer.name),
+        format!("Customer Display: {}", customer.display_name()),
         format!("Meter: {}", customer.meter_number),
-        format!("Viewer: {}", viewer.name),
         format!("Billing Month: {}", bill.month),
-        format!("Status: {}", bill.status),
         format!("Units: {:.2}", bill.units),
         format!("Rate per Unit: {:.2}", bill.rate_per_unit.0 as f64 / 100.0),
+        format!("Fixed Charge: {:.2}", bill.fixed_charge.0 as f64 / 100.0),
+        format!("Amount Due: {:.2}", bill.amount_due.0 as f64 / 100.0),
         format!("Due Date: {}", bill.due_date),
+        format!("Status: {}", bill.status),
+        format!("Viewer: {}", viewer.name),
     ];
 
     build_pdf(&lines)
+}
+
+pub fn build_bill_pdf_lines(bill: &Bill, customer: &User, viewer: &User) -> Vec<String> {
+    vec![
+        "Electricity Bill".to_string(),
+        format!("Bill ID: {}", bill.id),
+        format!("Customer: {}", customer.name),
+        format!("Customer Display: {}", customer.display_name()),
+        format!("Meter: {}", customer.meter_number),
+        format!("Billing Month: {}", bill.month),
+        format!("Units: {:.2}", bill.units),
+        format!("Rate per Unit: {:.2}", bill.rate_per_unit.0 as f64 / 100.0),
+        format!("Fixed Charge: {:.2}", bill.fixed_charge.0 as f64 / 100.0),
+        format!("Amount Due: {:.2}", bill.amount_due.0 as f64 / 100.0),
+        format!("Due Date: {}", bill.due_date),
+        format!("Status: {}", bill.status),
+        format!("Viewer: {}", viewer.name),
+    ]
+}
+
+pub fn render_bill_pdf_from_lines(lines: &[String]) -> Vec<u8> {
+    build_pdf(lines)
 }
 
 fn build_pdf(lines: &[String]) -> Vec<u8> {

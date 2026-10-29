@@ -76,5 +76,6 @@ pub fn bill_for_id(state: &AppState, bill_id: u32) -> Result<(Bill, User, User),
 
 pub fn download_bill_pdf(state: &AppState, bill_id: u32) -> Result<Vec<u8>, String> {
     let (bill, customer, viewer) = bill_for_id(state, bill_id)?;
-    Ok(pdf::render_bill_pdf(&bill, &customer, &viewer))
+    let lines = pdf::build_bill_pdf_lines(&bill, &customer, &viewer);
+    Ok(pdf::render_bill_pdf_from_lines(&lines))
 }
