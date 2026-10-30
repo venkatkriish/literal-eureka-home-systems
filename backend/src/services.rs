@@ -2,7 +2,8 @@ use chrono::{NaiveDate, Utc};
 
 use crate::{
     db::AppState,
-    models::{ApiError, Bill, BillStatus, BillingDate, BillingMonth, DashboardView, Money, NewBillInput, NewPaymentInput, Payment, PaymentStatus, StatsSummary, UpdateUserInput, User},
+    models::{ApiError, Bill, BillStatus, BillingDate, BillingMonth, DashboardView, Money, NewBillInput, NewPaymentInput, Payment, PaymentStatus, Role, StatsSummary, UpdateUserInput, User},
+    pdf,
 };
 
 pub fn list_users(state: &AppState) -> Vec<User> {
@@ -19,10 +20,10 @@ pub fn search_bills(state: &AppState, month: Option<String>, status: Option<Stri
         .lock()
         .unwrap()
         .iter()
-        .cloned()
         .filter(|bill| month.as_ref().map(|m| bill.month.0 == *m).unwrap_or(true))
         .filter(|bill| status.as_ref().map(|s| bill_status_name(&bill.status) == s.to_lowercase()).unwrap_or(true))
         .filter(|bill| user_id.map(|id| bill.user_id == id).unwrap_or(true))
+        .cloned()
         .collect()
 }
 
@@ -96,6 +97,38 @@ pub fn update_user(state: &AppState, user_id: u32, input: UpdateUserInput) -> Re
     if let Some(address) = input.address { user.address = address; }
     if let Some(role) = input.role { user.role = role; }
     Ok(user.clone())
+}
+
+/// Why a bill PDF can't be served.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PdfAccessError {
+    /// No `X-User-Id`, or it names no user.
+    Unauthenticated,
+    /// The viewer is neither the bill's customer nor an admin.
+    Forbidden,
+    NotFound,
+}
+
+/// The bill and its customer.
+pub fn bill_for_id(state: &AppState, bill_id: u32) -> Result<(Bill, User), String> {
+    let bills = state.bills.lock().unwrap();
+    let users = state.users.lock().unwrap();
+    let bill = bills.iter().find(|b| b.id == bill_id).cloned().ok_or_else(|| "bill not found".to_string())?;
+    let customer = users.iter().find(|u| u.id == bill.user_id).cloned().ok_or_else(|| "customer not found".to_string())?;
+    Ok((bill, customer))
+}
+
+/// The bill as a PDF, for its own customer or an admin only.
+pub fn download_bill_pdf(state: &AppState, bill_id: u32, viewer_id: Option<u32>) -> Result<Vec<u8>, PdfAccessError> {
+    let viewer = viewer_id
+        .and_then(|id| state.users.lock().unwrap().iter().find(|u| u.id == id).cloned())
+        .ok_or(PdfAccessError::Unauthenticated)?;
+    let (bill, customer) = bill_for_id(state, bill_id).map_err(|_| PdfAccessError::NotFound)?;
+    if viewer.id != customer.id && !matches!(viewer.role, Role::Admin) {
+        return Err(PdfAccessError::Forbidden);
+    }
+    let lines = pdf::build_bill_pdf_lines(&bill, &customer, &viewer);
+    Ok(pdf::render_bill_pdf_from_lines(&lines))
 }
 
 fn parse_money(value: &str) -> Result<Money, String> {
