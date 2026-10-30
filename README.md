@@ -21,9 +21,12 @@ GET /bills/:id/pdf
 Example:
 
 ```bash
-curl -OJ http://localhost:3000/bills/1/pdf
+curl -OJ -H "X-User-Id: 1" http://localhost:3000/bills/1/pdf
 ```
 
-Successful responses return `200 OK` with `Content-Type: application/pdf` and `Content-Disposition: attachment; filename="bill-<id>.pdf"`.
+A bill's PDF is for its own customer or an admin. Until the API has real sign-in, the caller identifies themselves with the `X-User-Id` header:
 
-If the bill id does not exist, the API returns `404 Not Found` with a JSON error body from the standard error mapper.
+- `200 OK` with `Content-Type: application/pdf` and `Content-Disposition: attachment; filename="bill-<id>.pdf"`;
+- `401 Unauthorized` without the header, or when it names no user;
+- `403 Forbidden` when the bill belongs to another customer;
+- `404 Not Found` when the bill doesn't exist.
