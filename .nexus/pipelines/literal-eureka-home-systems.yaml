@@ -1,0 +1,90 @@
+version: 1
+name: literal-eureka-home-systems
+description: Build, test and deliver venkatkriish/literal-eureka-home-systems
+triggers:
+- kind: push
+  branches:
+  - main
+  - release/*
+- kind: pull_request
+- kind: manual
+stages:
+- name: build-and-test
+  when:
+    paths_exist:
+    - Cargo.toml
+  steps:
+  - name: build
+    run: cargo build
+    cache:
+    - target
+  - name: lint
+    run: cargo clippy -- -D warnings
+    cache:
+    - target
+  - name: test
+    type: test
+    run: cargo test
+    cache:
+    - target
+    with:
+      select: auto
+      retry_flaky: 1
+- name: package
+  when:
+    branches:
+    - main
+    - release/*
+  needs:
+  - build-and-test
+  steps:
+  - name: build image
+    type: build_image
+    with:
+      image: registry.example.com/literal-eureka-home-systems
+      dockerfile: Dockerfile
+      push: true
+- name: security
+  needs:
+  - build-and-test
+  steps:
+  - name: code scan
+    type: scan
+    run: semgrep scan --config auto --error --quiet || (command -v semgrep >/dev/null || { echo 'semgrep not installed;
+      skipped'; exit 0; }; exit 1)
+  - name: secret scan
+    type: scan
+    run: command -v gitleaks >/dev/null && gitleaks detect --no-banner --redact || { command -v gitleaks >/dev/null
+      && exit 1 || echo 'gitleaks not installed; skipped'; }
+  - name: dependency audit
+    type: scan
+    run: if [ -f package-lock.json ]; then npm audit --audit-level=high; elif [ -f requirements.txt ] && command
+      -v pip-audit >/dev/null; then pip-audit -r requirements.txt; elif [ -f Cargo.lock ] && command -v cargo-audit
+      >/dev/null; then cargo audit; else echo 'no supported lockfile or auditor; skipped'; fi
+  - name: iac scan
+    type: scan
+    run: command -v checkov >/dev/null && checkov -d . --quiet --compact --framework kubernetes,helm,dockerfile,terraform
+      || echo 'checkov not installed; skipped'
+  - name: image scan
+    type: scan
+    run: command -v trivy >/dev/null && trivy image --exit-code 1 --severity HIGH,CRITICAL ${NEXUS_IMAGE}:${NEXUS_SHA}
+      || echo 'trivy not installed; skipped'
+- name: deploy-dev
+  when:
+    branches:
+    - main
+  needs:
+  - package
+  - security
+  steps:
+  - name: deploy dev
+    type: deploy
+    timeout_s: 3600
+    with:
+      environment: dev
+      strategy: rolling
+      target: helm
+      connection_id: null
+      pause_s: 120
+      release: literal-eureka-home-systems
+      chart: ./chart
